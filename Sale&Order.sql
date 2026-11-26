@@ -1315,3 +1315,482 @@ exec pr_NamDoanhThuLonNhat
 print N'Năm có doanh thu lớn nhất là: ' + cast(@nam as varchar(10));
 print N'Tổng doanh thu đạt: ' + format(@doanhThu, '##,# VND', 'es-ES');
 go
+-- VIẾT HÀM
+-- 1. Hãy xuất dạng Text giá tiền của những sản phẩm có giá tiền lớn nhất 
+create function fn_GiaTienSP_LonNhat()
+returns nvarchar(100)
+as
+begin
+    declare @giaMax money;
+    select @giaMax = max(donGiaBan) from SanPham;
+    
+    return concat(N'Giá tiền lớn nhất là: ', format(@giaMax, '##,# VND', 'es-ES'));
+end;
+go
+
+select dbo.fn_GiaTienSP_LonNhat() as ThongBao;
+go
+
+-- 2. Hãy viết đoạn lệnh để lấy giá trị id lớn nhất của mã sản phẩm (tách phần chữ và số riêng biệt) 
+create function fn_LayMaxID_TachChuVaSo()
+returns table
+as
+return
+(
+    select top 1 
+        maSP as MaGoc,
+        left(maSP, 3) as PhanChu,
+        cast(right(maSP, len(maSP) - 3) as int) as PhanSo
+    from SanPham
+    order by maSP desc
+);
+go
+
+-- Cách dùng:
+select * from dbo.fn_LayMaxID_TachChuVaSo();
+go
+
+-- 3. Hãy viết đoạn lệnh để tìm giá trị id tiếp theo của bảng sản phẩm - bằng cách lấy mã lớn nhất và 
+-- tăng thêm 1 đơn vị, và viết câu lệnh chèn dữ liệu vào bảng sản phẩm với id tiếp theo vừa tìm được đó; 
+
+-- Không thể viết hàm được vì không thể chèn dữ liệu bằng cách viết lệnh INSERT bên trong hàm
+
+-- 4. Hãy viết đoạn lệnh để đếm số lần mua hàng của từng khách hàng, nếu số lần mua lớn hơn hoặc bằng 10
+-- thì ghi ‘Khách hàng thân thiết’, ngược lại ghi ‘Khách hàng tiềm năng’ 
+create function fn_PhanLoaiKhachHang_ThanThiet()
+returns table
+as
+return
+(
+    select 
+        k.maKH, 
+        k.tenKH, 
+        count(d.maKH) as soLanMuaHang,  
+        case
+            when count(d.maKH) >= 3 then N'Khách hàng thân thiết'
+            else N'Khách hàng tiềm năng'
+        end as TrangThaiKH
+    from KhachHang k
+    left join DonDatHang_HoaDon d on d.maKH = k.maKH 
+    group by k.maKH, k.tenKH
+);
+go
+select * from dbo.fn_PhanLoaiKhachHang_ThanThiet();
+go
+-- 5. Hãy viết đoạn lệnh để tính tiền cho đơn hàng mới nhất (đơn hàng vừa được mua).  
+
+-- Không thể viết hàm được vì không thể dùng lệnh UPDATE để cập nhập lại tổng tiền
+
+-- 6. Hãy viết đoạn lệnh để thực hiện yêu cầu: kiểm tra xem có đơn hàng nào mà tồn tại số lượng mua lớn hơn 
+-- số lượng hiện có -> nếu có thì cập nhật số lượng hiện còn của các sản phẩm nằm trong giỏ hàng mà có số lượng
+-- đặt lớn hơn số lượng hiện còn  bằng cách gán về số lượng đặt là 0 
+
+-- Không thể viết bằng hàm vì không thể cập nhập ngay trong hàm 
+
+-- 7. Viết đoạn lệnh để tính khuyến mãi theo điều kiện sau: nếu đơn hàng trên 1 triệu thì được giảm 10%, cứ tăng
+-- thêm 1 triệu nữa thì được giảm thêm 2% nữa (tối đa giảm 30%) 
+create function fn_TinhPhanTramGiamGia
+(
+    @tongTien money
+)
+returns int
+as
+begin
+    declare @phanTram int;
+
+    if @tongTien <= 1000000
+        set @phanTram = 0;
+    else
+    begin
+        set @phanTram = 10 + 2 * floor((@tongTien - 1000000) / 1000000);
+        if @phanTram > 30 
+            set @phanTram = 30;
+    end
+
+    return @phanTram;
+end;
+go
+
+select 
+    d.maDH,
+    isnull(sum(c.soLuongDat * c.donGia), 0) as TongTienGoc,
+    dbo.fn_TinhPhanTramGiamGia(isnull(sum(c.soLuongDat * c.donGia), 0)) as PhanTramDuocGiam
+from DonDatHang_HoaDon d
+left join ChiTietDonHang c on c.maDH = d.maDH
+group by d.maDH;
+go
+-- 8. Viết đoạn lệnh để đếm số lần mua của mỗi khách hàng, nếu số lần mua trên 5 thì hiển thị “Khách Vip”, ngược
+-- lại hiển thị “Khách tiềm năng” 
+create function fn_PhanLoaiKhachVIP()
+returns table
+as
+return
+(
+    select 
+        k.maKH, 
+        k.tenKH,
+        count(d.maDH) as soLanMuaHang, 
+        case
+            when count(d.maDH) > 3 then N'Khách Vip'
+            else N'Khách tiềm năng'
+        end as TrangThaiKhachHang
+    from KhachHang k 
+    left join DonDatHang_HoaDon d on k.maKH = d.maKH 
+    group by k.maKH, k.tenKH
+);
+go
+select * from dbo.fn_PhanLoaiKhachVIP();
+go 
+-- 9. Tăng tự động các column ID cho tất cả các table được sinh từ thực thể mạnh 
+-- (viết cả hàm và thủ tục để thực hiện việc này) 
+-- Bảng ChucVu
+create function fn_idNext_ChucVu()
+returns varchar(10)
+as
+begin
+    declare @maMax varchar(10), @idNext varchar(10);
+    select @maMax = max(maCV) from ChucVu;
+
+    if @maMax is null
+        set @idNext = 'CV001';
+    else
+        set @idNext = concat('CV', format(right(@maMax, 3) + 1, 'D3'));
+
+    return @idNext;
+end;
+go
+
+select dbo.fn_idNext_ChucVu() as MaChucVuTiepTheo;
+go
+-- Bảng SanPham
+create function fn_idNext_SanPham()
+returns char(7)
+as
+begin
+    declare @maMax char(7), @idNext char(7);
+    select @maMax = max(maSP) from SanPham;
+
+    if @maMax is null
+        set @idNext = '2150001';
+    else
+        set @idNext = concat('215', format(right(@maMax, 4) + 1, 'D4'));
+
+    return @idNext;
+end;
+go
+
+select dbo.fn_idNext_SanPham() as MaSanPhamTiepTheo;
+go
+-- Bảng KhachHang
+create function fn_idNext_KhachHang()
+returns varchar(10)
+as
+begin
+    declare @maMax varchar(10), @idNext varchar(10);
+    select @maMax = max(maKH) from KhachHang;
+
+    if @maMax is null
+        set @idNext = 'KH0001';
+    else
+        set @idNext = concat('KH', format(right(@maMax, 4) + 1, 'D4'));
+
+    return @idNext;
+end;
+go
+select dbo.fn_idNext_KhachHang() as MaKhachHangTiepTheo;
+go
+-- Bảng NhanVien
+create function fn_idNext_NhanVien()
+returns varchar(10)
+as
+begin
+    declare @maMax varchar(10), @idNext varchar(10);
+    select @maMax = max(maNV) from NhanVien;
+
+    if @maMax is null
+        set @idNext = 'NV001';
+    else
+        set @idNext = concat('NV', format(right(@maMax, 3) + 1, 'D3'));
+
+    return @idNext;
+end;
+go
+
+select dbo.fn_idNext_NhanVien() as MaNhanVienTiepTheo;
+go
+-- Bảng NhaCungCap
+create function fn_idNext_NhaCungCap()
+returns varchar(10)
+as
+begin
+    declare @maMax varchar(10), @idNext varchar(10);
+    select @maMax = max(maNCC) from NhaCungCap;
+
+    if @maMax is null
+        set @idNext = 'NCC001';
+    else
+        set @idNext = concat('NCC', format(right(@maMax, 3) + 1, 'D3'));
+
+    return @idNext;
+end;
+go
+
+select dbo.fn_idNext_NhaCungCap() as MaNhaCungCapTiepTheo;
+go
+-- Bảng KhuyenMai
+create function fn_idNext_KhuyenMai()
+returns varchar(10)
+as
+begin
+    declare @maMax int, @idNext varchar(10);
+    select @maMax = max(cast(maKM as int)) from KhuyenMai;
+
+    if @maMax is null
+        set @idNext = '1';
+    else
+        set @idNext = cast(@maMax + 1 as varchar(10));
+
+    return @idNext;
+end;
+go
+
+select dbo.fn_idNext_KhuyenMai() as MaKhuyenMaiTiepTheo;
+go
+-- Bảng DonDatHang_HoaDon
+create function fn_idNext_DonDatHang()
+returns varchar(10)
+as
+begin
+    declare @maMax varchar(10), @idNext varchar(10);
+    select @maMax = max(maDH) from DonDatHang_HoaDon;
+
+    if @maMax is null
+        set @idNext = 'NVL001';
+    else
+        set @idNext = concat('NVL', format(right(@maMax, 3) + 1, 'D3'));
+
+    return @idNext;
+end;
+go
+select dbo.fn_idNext_DonDatHang() as MaDonHangTiepTheo;
+go
+-- 10. thống kê các sản phẩm bán chạy (có tham số) 
+create function fn_ThongKeSPBanChay
+(
+    @topN int
+)
+returns table
+as
+return
+(
+    select top (@topN) with ties 
+        s.maSP, 
+        s.tenSP, 
+        s.donGiaBan,
+        sum(c.soLuongDat) as tongSoLuongBan,
+        sum(c.soLuongDat * c.donGia) as tongDoanhThu
+    from SanPham s
+    inner join ChiTietDonHang c on s.maSP = c.maSP
+    group by s.maSP, s.tenSP, s.donGiaBan
+    order by sum(c.soLuongDat) desc
+);
+go
+-- Gọi hàm:
+select * from dbo.fn_ThongKeSPBanChay(3);
+go
+
+-- 11. những tháng có doanh thu trên 200000 (có tham số là định mức tiền) 
+create function fn_ThongKeDoanhThuTheoThang
+(
+    @dinhMucTien money
+)
+returns table
+as
+return
+(
+    select 
+        month(ngayThanhToan) as thang,
+        year(ngayThanhToan) as nam,
+        sum(tongTienDonHang) as tongDoanhThu
+    from DonDatHang_HoaDon
+    where ngayThanhToan is not null 
+    group by year(ngayThanhToan), month(ngayThanhToan)
+    having sum(tongTienDonHang) > @dinhMucTien
+);
+go
+-- Gọi hàm
+select * from dbo.fn_ThongKeDoanhThuTheoThang(200000)
+order by nam desc, thang desc;
+go
+
+-- 12. thống kê số lượng khách nhau theo từng tỉnh/thành phố (sắp xếp giảm dần) 
+create function fn_ThongKeKhachHangTheoTinh()
+returns table
+as
+return
+(
+    select 
+        diaChiKH as tinhThanhPho,
+        count(maKH) as soLuongKhachHang
+    from KhachHang
+    group by diaChiKH
+);
+go
+
+-- Gọi hàm: 
+select * from dbo.fn_ThongKeKhachHangTheoTinh()
+order by soLuongKhachHang desc;
+go
+
+-- 13. thống kê giá trung bình, giá max, giá min ở các phiếu nhập hàng cho mỗi sản phẩm 
+create function fn_ThongKeGiaNhapSanPham()
+returns table
+as
+return
+(
+    select 
+        s.maSP,
+        s.tenSP,
+        avg(c.giaNhap) as giaNhapTrungBinh,
+        max(c.giaNhap) as giaNhapCaoNhat,
+        min(c.giaNhap) as giaNhapThapNhat
+    from SanPham s
+    inner join ChiTietPhieuNhap c on s.maSP = c.maSP
+    group by s.maSP, s.tenSP
+);
+go
+-- Gọi hàm:
+select * from dbo.fn_ThongKeGiaNhapSanPham();
+go
+
+-- 14. thống kê số lần khách hàng mua hàng (sắp xếp giảm dần) 
+create function fn_ThongKeSoLanMuaHang()
+returns table
+as
+return
+(
+    select 
+        k.maKH,
+        k.tenKH,
+        count(d.maDH) as soLanMuaHang
+    from KhachHang k
+    left join DonDatHang_HoaDon d on k.maKH = d.maKH
+    group by k.maKH, k.tenKH
+);
+go
+-- Gọi hàm
+select * from dbo.fn_ThongKeSoLanMuaHang()
+order by soLanMuaHang desc;
+go
+
+-- 15. thông kê năm có doanh thu lớn nhất (cả thông tin về năm và thông tin về doanh thu) phải dùng thủ tục 
+-- (vì có 2 giá trị đầu ra) 
+create function fn_NamDoanhThuLonNhat()
+returns table
+as
+return
+(
+    select top 1 
+        year(ngayThanhToan) as nam,
+        sum(tongTienDonHang) as tongDoanhThu
+    from DonDatHang_HoaDon
+    where ngayThanhToan is not null
+    group by year(ngayThanhToan)
+    order by sum(tongTienDonHang) desc
+);
+go
+-- Gọi hàm
+select * from dbo.fn_NamDoanhThuLonNhat();
+go
+
+-- 16. Thành tiền khi biết đơn giá và số lượng đặt
+-- => tham số vào là đơn giá và số lượng đặt 
+create function fn_TinhThanhTien
+(
+    @donGia money,
+    @soLuongDat int
+)
+returns money
+as
+begin
+    return isnull(@donGia * @soLuongDat, 0);
+end;
+go
+select dbo.fn_TinhThanhTien(150000, 3) as ThanhTien;
+go
+
+-- 17. tổng tiền cho mỗi đơn hàng khi biết mã đơn hàng 
+-- => tham số vào là mã đơn hàng 
+create function fn_TongTienDonHang
+(
+    @maDH varchar(10)
+)
+returns money
+as
+begin
+    declare @tongTien money;
+
+    select @tongTien = isnull(sum(soLuongDat * donGia), 0)
+    from ChiTietDonHang
+    where maDH = @maDH;
+
+    return @tongTien;
+end;
+go
+select dbo.fn_TongTienDonHang('NVL011') as TongTienDonHang;
+go
+
+-- 18. tính thành tiền sau khi đã áp dụng khuyến mãi khi biết mã khuyến mãi, số lượng bán, đơn giá 
+-- => tham số vào là gì? 
+-- Tham số vào là: 
+-- @maKM varchar(10) (Mã khuyến mãi)
+-- @soLuongBan int (Số lượng bán)
+-- @donGia money (Đơn giá)
+create function fn_ThanhTienSauKhuyenMai
+(
+    @maKM varchar(10),
+    @soLuongBan int,
+    @donGia money
+)
+returns money
+as
+begin
+    declare @phanTramGiam decimal(5,2);
+    declare @thanhTien money;
+
+    select @phanTramGiam = phanTramGiam
+    from KhuyenMai
+    where maKM = @maKM;
+
+    if @phanTramGiam is null
+        set @phanTramGiam = 0;
+
+    set @thanhTien = (@soLuongBan * @donGia) * (1 - @phanTramGiam / 100.0);
+
+    return @thanhTien;
+end;
+go
+select dbo.fn_ThanhTienSauKhuyenMai('1', 2, 500000) as ThanhTienSauKM;
+go
+
+-- 19. tổng tiền thu vào theo từng tháng – năm, hoặc từ ngày đến ngày (hoặc ngày bắt đầu và ngày kết thúc) 
+-- => tham số vào là gì?
+-- Tham số vào: @thang int, @nam int
+create function fn_TongTienThuTheoThangNam
+(
+    @thang int,
+    @nam int
+)
+returns money
+as
+begin
+    declare @tongThu money;
+    select @tongThu = isnull(sum(c.soLuongDat * c.donGia), 0)
+    from DonDatHang_HoaDon d
+    inner join ChiTietDonHang c on d.maDH = c.maDH
+    where month(d.ngayThanhToan) = @thang 
+      and year(d.ngayThanhToan) = @nam;
+    return @tongThu;
+end;
+go
+select dbo.fn_TongTienThuTheoThangNam(9, 2026) as TongTienThang9;
