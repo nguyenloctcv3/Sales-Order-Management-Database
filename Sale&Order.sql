@@ -869,3 +869,449 @@ select *
 from DonDatHang_HoaDon 
 where maHoaDonDienTu is null
 go
+-- VIẾT THỦ TỤC 
+-- 1. Hãy xuất dạng Text giá tiền của những sản phẩm có giá tiền lớn nhất 
+declare @giaMax money;
+select @giaMax = max(donGiaBan) from SanPham;
+print N'Giá tiền lớn nhất là: ' + cast(@giaMax as varchar(20));
+go
+
+-- 2. Hãy viết đoạn lệnh để lấy giá trị id lớn nhất của mã sản phẩm (tách phần chữ và số riêng biệt)
+begin 
+    declare @maxID char(7);
+    declare @phanChu varchar(5);
+    declare @phanSo int;
+    -- Lấy mã SP lớn nhất từ SanPham 
+    select @maxID = max(maSP) from SanPham;
+    if @maxID is not null
+    begin 
+        set @phanChu = left(@maxID, 3);
+        set @phanSo  = cast(right(@maxID, len(@maxID) - 3) as int);
+        -- In kết quả ra màn hình (đã sửa in đúng biến @phanSo)
+        print N'Mã sản phẩm lớn nhất là: ' + @maxID;
+        print N'Phần chữ: ' + @phanChu;
+        print N'Phần số: ' + cast(@phanSo as varchar(10));
+    end
+    else
+    begin 
+        print N'Bảng SanPham đang trống dữ liệu';
+    end
+end
+go
+
+-- 3. Hãy viết đoạn lệnh để tìm giá trị id tiếp theo của bảng sản phẩm - bằng cách lấy mã lớn nhất và tăng 
+-- thêm 1 đơn vị, và viết câu lệnh chèn dữ liệu vào bảng sản phẩm với id tiếp theo vừa tìm được đó
+create proc pr_ThemSanPham_TuDongMa
+    @tenSP nvarchar(100),
+    @donGiaBan money,
+    @soLuongHienCon bigint,
+    @soLuongCanDuoi smallint
+as
+begin
+    declare @maMax char(7);
+    declare @idNext char(7);
+    -- Lấy mã lớn nhất
+    select @maMax = max(maSP) from SanPham;
+    -- Tăng mã lên 1 đơn vị
+    if @maMax is null
+        set @idNext = '2150001';
+    else
+        set @idNext = concat('215', format(right(@maMax, 4) + 1, 'D4'));
+    -- Chèn vào bảng
+    insert into SanPham (maSP, tenSP, donGiaBan, soLuongHienCon, soLuongCanDuoi)
+    values (@idNext, @tenSP, @donGiaBan, @soLuongHienCon, @soLuongCanDuoi);
+    print N'Đã thêm thành công sản phẩm mới: ' + @idNext;
+end;
+go
+-- 4. Chạy thử thủ tục:
+exec pr_ThemSanPham_TuDongMa N'Chuột không dây Logitech', 350000, 50, 5;
+go
+
+-- 5. Hãy viết đoạn lệnh để đếm số lần mua hàng của từng khách hàng, nếu 
+-- số lần mua lớn hơn hoặc bằng 3 thì ghi ‘Khách hàng thân thiết’, ngược lại ghi ‘Khách hàng tiềm năng’ 
+select k.maKH, k.tenKh, count(d.maKH) as soLanMuaHang,  
+    case
+        when count(d.maKH) >= 3 then N'Khách hàng thân thiết'
+        else N'Khách hàng tiềm năng'
+    end as TrangThaiKH
+from KhachHang k
+left join DonDatHang_HoaDon d on d.maKH = k.maKH 
+group by k.maKH, tenKH;
+go
+
+-- 6. Hãy viết đoạn lệnh để tính tiền cho đơn hàng mới nhất (đơn hàng vừa được mua).  
+     -- i. Nếu tổng tiền lớn hơn 1.000.000 thì áp dụng giảm 10% và cập nhật lại tổng tiền mới cần trả; 
+INSERT INTO ChiTietDonHang (maDH, maSP, soLuongDat, donGia)
+VALUES 
+    ('NVL011', '2150011', 15, 1800000),
+    ('NVL011', '2150012', 1, 600000),
+    ('NVL011', '2150013', 1, 500000),
+    ('NVL012', '2150011', 1, 1800000);
+
+go
+
+begin 
+    -- Khai báo
+    declare @maDH_MoiNhat varchar(10);
+    declare @tongTien money;
+    -- Lấy ra đơn hàng mới nhất
+    select top 1 @maDH_MoiNhat = maDH 
+    from DonDatHang_HoaDon
+    order by ngayTaoDH desc;
+    -- Lấy ra tổng tiền của đơn hàng mới nhất 
+    select @tongTien = isnull(sum(soLuongDat * donGia), 0)
+    from ChiTietDonHang 
+    where maDH = @maDH_MoiNhat;
+    -- In mã và tổng tiền trước khi cập nhập giá
+    print N'Mã đơn hàng mới nhất là: ' + @maDH_MoiNhat;
+    print N'Tổng tiền ban đầu là: ' + format(@tongTien, '##,# VND', 'es-ES');
+    -- Nếu tổng tiền lớn hơn 1.000.000 thì áp dụng giảm 10% và cập nhập lại tổng tiền mới cần trả
+    if @tongTien > 1000000
+    begin   
+        set @tongTien = @tongTien * 0.9;
+        print N'Đơn hàng của bạn được giảm 10% do hóa đơn trên 1 triệu VND';
+        print N'Tổng tiền đơn hàng của bạn sau khi giảm: ' + format(@tongTien, '##,# VND', 'es-ES');
+    end
+    -- Nếu tổng tiền từ 400.000 đến dưới 1.000.000 thì tổng tiền không cần cộng phí ship
+    else if @tongTien >= 400000
+    begin 
+        print N'Đơn hàng của bạn được miễn phí ship do hóa đơn trên 400k VND';
+        print N'Tổng tiền đơn hàng của bạn là: ' + format(@tongTien, '##,# VND', 'es-ES');
+    end
+    -- Nếu tổng tiền nhỏ hơn 400.000 thì tổng tiền gồm tổng tiền hàng và phí ship 
+    -- (giả sử phí ship là 40.000) 
+    else
+    begin 
+        set @tongTien = @tongTien + 40000;
+        print N'Tổng tiền đơn hàng của bạn sau khi cộng tiền ship: ' + format(@tongTien, '##,# VND', 'es-ES');
+    end
+
+    update DonDatHang_HoaDon
+    set tongTienDonHang = @tongTien
+    where maDH = @maDH_MoiNhat;
+
+    print N'Cập nhập số tiền của đơn hàng mới nhất thành công';
+end
+go
+
+-- 7. Hãy viết đoạn lệnh để thực hiện yêu cầu: kiểm tra xem có đơn hàng nào mà 
+-- tồn tại số lượng mua lớn hơn số lượng hiện có -> nếu có thì cập nhật số lượng
+-- hiện còn của các sản phẩm nằm trong giỏ hàng mà có số lượng đặt lớn hơn số lượng hiện
+-- còn bằng cách gán về số lượng đặt là 0 
+begin 
+    if exists (
+        select 1 
+        from ChiTietDonHang c
+        inner join SanPham s on s.maSP = c.maSP 
+        where soLuongHienCon < soLuongDat
+    )
+    begin 
+        update c
+        set soLuongDat = 0
+        from ChiTietDonHang c
+        inner join SanPham s on s.maSP = c.maSP 
+        where soLuongHienCon < soLuongDat
+
+        print N'Đã cập nhập số lượng đặt bằng 0 cho các sản phẩm có số lượng đặt vượt số lượng hiện có';
+    end
+    else
+    begin 
+        print N'Không có sản phẩm nào có số lượng mua lớn hơn số lượng hiện có';
+    end
+end;
+go
+
+-- 8. Viết đoạn lệnh để tính khuyến mãi theo điều kiện sau: nếu đơn hàng trên 1 triệu
+-- thì được giảm 10%, cứ tăng thêm 1 triệu nữa thì được giảm thêm 2% nữa (tối đa giảm 30%) 
+select 
+    d.maDH, 
+    isnull(sum(c.soLuongDat * c.donGia), 0) as tongTienGoc,
+    case 
+        when isnull(sum(c.soLuongDat * c.donGia), 0) <= 1000000 then 0 
+        when 10 + 2 * floor((isnull(sum(c.soLuongDat * c.donGia), 0) - 1000000) / 1000000) > 30 then 30
+        else 10 + 2 * floor((isnull(sum(c.soLuongDat * c.donGia), 0) - 1000000) / 1000000) 
+    end as phanTramGiam
+from DonDatHang_HoaDon d
+left join ChiTietDonHang c on c.maDH = d.maDH
+group by d.maDH;
+go
+
+-- 9. Viết đoạn lệnh để đếm số lần mua của mỗi khách hàng, nếu số lần mua trên 3 thì hiển thị
+-- “Khách Vip”, ngược lại hiển thị “Khách tiềm năng” 
+select k.maKH, count(d.maDH) as soLanMuaHang, 
+    case
+        when count(d.maDH) > 3 then N'Khách Vip'
+        else N'Khách tiềm năng'
+    end as trangThaiKhachHang
+from KhachHang k 
+left join DonDatHang_HoaDon d on k.maKH = d.maKH 
+group by k.maKH;
+go
+
+-- 10. Tăng tự động các column ID cho tất cả các table được sinh từ thực thể mạnh 
+-- Bảng ChucVu
+create proc pr_idNext_ChucVu 
+    @idNext varchar(10) output
+as 
+begin 
+    declare @maMax varchar(10);
+    select @maMax = max(maCV) from ChucVu;
+
+    if @maMax is null
+        set @idNext = 'CV001';
+    else 
+        set @idNext = concat('CV', format(right(@maMax, 3) + 1, 'D3'));
+end;
+go
+
+-- Test ChucVu:
+declare @kqCV varchar(10);
+exec pr_idNext_ChucVu @kqCV output;
+print N'Mã Chức Vụ tiếp theo: ' + @kqCV;
+go
+
+-- Bảng SanPham
+create proc pr_idNext_SanPham 
+    @idNext char(7) output
+as 
+begin 
+    declare @maMax char(7);
+    select @maMax = max(maSP) from SanPham;
+
+    if @maMax is null
+        set @idNext = '2150001';
+    else 
+        set @idNext = concat('215', format(right(@maMax, 4) + 1, 'D4'));
+end;
+go
+
+-- Test SanPham:
+declare @kqSP char(7);
+exec pr_idNext_SanPham @kqSP output;
+print N'Mã Sản Phẩm tiếp theo: ' + @kqSP;
+go
+
+-- Bảng KhachHang
+create proc pr_idNext_KhachHang 
+    @idNext varchar(10) output
+as 
+begin 
+    declare @maMax varchar(10);
+    select @maMax = max(maKH) from KhachHang;
+
+    if @maMax is null
+        set @idNext = 'KH0001';
+    else 
+        set @idNext = concat('KH', format(right(@maMax, 4) + 1, 'D4'));
+end;
+go
+
+declare @kqKH varchar(10);
+exec pr_idNext_KhachHang @kqKH output;
+print N'Mã Khách Hàng tiếp theo: ' + @kqKH;
+go
+-- Bảng NhanVien
+create proc pr_idNext_NhanVien 
+    @idNext varchar(10) output
+as 
+begin 
+    declare @maMax varchar(10);
+    select @maMax = max(maNV) from NhanVien;
+
+    if @maMax is null
+        set @idNext = 'NV001';
+    else 
+        set @idNext = concat('NV', format(right(@maMax, 3) + 1, 'D3'));
+end;
+go
+
+declare @kqNV varchar(10);
+exec pr_idNext_NhanVien @kqNV output;
+print N'Mã Nhân Viên tiếp theo: ' + @kqNV;
+go
+-- Bảng NhaCungCap
+create proc pr_idNext_NhaCungCap 
+    @idNext varchar(10) output
+as 
+begin 
+    declare @maMax varchar(10);
+    select @maMax = max(maNCC) from NhaCungCap;
+
+    if @maMax is null
+        set @idNext = 'NCC001';
+    else 
+        set @idNext = concat('NCC', format(right(@maMax, 3) + 1, 'D3'));
+end;
+go
+
+declare @kqNCC varchar(10);
+exec pr_idNext_NhaCungCap @kqNCC output;
+print N'Mã Nhà Cung Cấp tiếp theo: ' + @kqNCC;
+go
+
+-- Bảng KhuyenMai
+create proc pr_idNext_KhuyenMai
+    @idNext varchar(10) output
+as
+begin
+    declare @maMax int;
+    select @maMax = max(cast(maKM as int)) from KhuyenMai;
+
+    if @maMax is null
+        set @idNext = '1';
+    else
+        set @idNext = cast(@maMax + 1 as varchar(10));
+end;
+go
+
+-- Test thử:
+declare @kqKM varchar(10);
+exec pr_idNext_KhuyenMai @kqKM output;
+print N'Mã Khuyến Mãi tiếp theo là: ' + @kqKM; -- Sẽ in ra đúng số: 11
+go
+-- Bảng DonDatHang_HoaDon
+create proc pr_idNext_DonDatHang 
+    @idNext varchar(10) output
+as 
+begin 
+    declare @maMax varchar(10);
+    select @maMax = max(maDH) from DonDatHang_HoaDon;
+
+    if @maMax is null
+        set @idNext = 'NVL001';
+    else 
+        set @idNext = concat('NVL', format(right(@maMax, 3) + 1, 'D3'));
+end;
+go
+
+-- Test DonDatHang:
+declare @kqDH varchar(10);
+exec pr_idNext_DonDatHang @kqDH output;
+print N'Mã Đơn Hàng tiếp theo: ' + @kqDH;
+go
+
+-- 11. thống kê các sản phẩm bán chạy (có tham số) 
+create proc pr_ThongKeSPBanChay
+    @topN int
+as
+begin
+    select top (@topN) with ties 
+        s.maSP, 
+        s.tenSP, 
+        s.donGiaBan,
+        sum(c.soLuongDat) as tongSoLuongBan,
+        sum(c.soLuongDat * c.donGia) as tongDoanhThu
+    from SanPham s
+    inner join ChiTietDonHang c on s.maSP = c.maSP
+    group by s.maSP, s.tenSP, s.donGiaBan
+    order by tongSoLuongBan desc;
+end;
+go
+-- Chạy thủ tục
+exec pr_ThongKeSPBanChay 3;
+go
+
+-- 12. những tháng có doanh thu trên 200000 (có tham số là định mức tiền) 
+create proc pr_ThongKeDoanhThuTheoThang
+    @dinhMucTien money 
+as
+begin
+    select 
+        month(ngayThanhToan) as thang,
+        year(ngayThanhToan) as nam,
+        sum(tongTienDonHang) as tongDoanhThu
+    from DonDatHang_HoaDon
+    where ngayThanhToan is not null 
+    group by year(ngayThanhToan), month(ngayThanhToan)
+    having sum(tongTienDonHang) > @dinhMucTien
+    order by nam desc, thang desc;
+end;
+go
+
+-- Chạy thủ tục
+exec pr_ThongKeDoanhThuTheoThang 200000;
+go  
+
+-- 13. Thống kê số lượng khách hàng theo từng tỉnh/thành phố (sắp xếp giảm dần)
+create proc pr_ThongKeKhachHangTheoTinh
+as
+begin
+    select 
+        diaChiKH as tinhThanhPho,
+        count(maKH) as soLuongKhachHang
+    from KhachHang
+    group by diaChiKH
+    order by soLuongKhachHang desc;
+end;
+go
+
+-- Chạy thủ tục 
+exec pr_ThongKeKhachHangTheoTinh;
+go
+
+-- 14. Thống kê giá trung bình, giá max, giá min ở các phiếu nhập hàng cho mỗi sản phẩm
+create proc pr_ThongKeGiaNhapSanPham
+as
+begin
+    select 
+        s.maSP,
+        s.tenSP,
+        avg(c.giaNhap) as giaNhapTrungBinh,
+        max(c.giaNhap) as giaNhapCaoNhat,
+        min(c.giaNhap) as giaNhapThapNhat
+    from SanPham s
+    inner join ChiTietPhieuNhap c on s.maSP = c.maSP
+    group by s.maSP, s.tenSP;
+end;
+go
+
+-- Chạy thử thủ tục
+exec pr_ThongKeGiaNhapSanPham;
+go
+
+-- 15. Thống kê số lần khách hàng mua hàng (sắp xếp giảm dần)
+create proc pr_ThongKeSoLanMuaHang
+as
+begin
+    select 
+        k.maKH,
+        k.tenKH,
+        count(d.maDH) as soLanMuaHang
+    from KhachHang k
+    left join DonDatHang_HoaDon d on k.maKH = d.maKH
+    group by k.maKH, k.tenKH
+    order by soLanMuaHang desc;
+end;
+go
+
+-- Chạy thử thủ tục
+exec pr_ThongKeSoLanMuaHang;
+go
+
+-- 16. Thống kê năm có doanh thu lớn nhất (thủ tục có 2 tham số đầu ra OUTPUT)
+create proc pr_NamDoanhThuLonNhat
+    @namMax int output,
+    @doanhThuMax money output
+as
+begin
+    select top 1 
+        @namMax = year(ngayThanhToan),
+        @doanhThuMax = sum(tongTienDonHang)
+    from DonDatHang_HoaDon
+    where ngayThanhToan is not null
+    group by year(ngayThanhToan)
+    order by sum(tongTienDonHang) desc;
+end;
+go
+
+-- Chạy thủ tục 
+declare @nam int;
+declare @doanhThu money;
+
+exec pr_NamDoanhThuLonNhat 
+    @namMax = @nam output, 
+    @doanhThuMax = @doanhThu output;
+
+print N'Năm có doanh thu lớn nhất là: ' + cast(@nam as varchar(10));
+print N'Tổng doanh thu đạt: ' + format(@doanhThu, '##,# VND', 'es-ES');
+go
