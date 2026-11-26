@@ -98,3 +98,40 @@ create table ChiTietDonHang (
     primary key (maDH, maSP)
 );
 go
+-- BỔ SUNG THÊM CÁC BẢNG BỔ TRỢ
+-- 9. Khuyến Mãi
+create table KhuyenMai (
+    maKM varchar(10) primary key,
+    tenKM nvarchar(100) NOT NULL,
+    phanTramGiam decimal(5,2) NOT NULL,
+    ngayBatDau date NOT NULL,
+    ngayKetThuc date NOT NULL
+);
+go
+-- 10. Bảng Chức Vụ
+create table ChucVu (
+    maCV varchar(10) NOT NULL primary key,
+    tenCV nvarchar(50) NOT NULL
+);
+go
+
+-- 11. Bảng Nhân Viên Chức Vụ 
+create table NhanVien_ChucVu (
+    maNV varchar(10) NOT NULL,
+    maCV varchar(10) NOT NULL,
+    ngayNhanChuc DATE DEFAULT GETDATE(),
+    primary key (maNV, maCV)
+);
+go
+-- Tách cột Địa chỉ trong KhachHang 
+alter table KhachHang 
+    add 
+        soNhaTenDuong nvarchar(100),
+        phuongXa nvarchar(50),
+        quanHuyen nvarchar(50),
+        tinhThanhPho nvarchar(50);
+go
+
+alter table KhachHang
+drop column tinhThanhPho, quanHuyen;
+go
