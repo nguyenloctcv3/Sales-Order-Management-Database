@@ -555,3 +555,317 @@ values
     ('5210008', '2150009', 150, 22000),
     ('5210009', '2150010', 120, 22000)
 go
+-- ==========================================================================================================
+-- TRUY VẤN DỮ LIỆU
+-- ==========================================================================================================
+-- C1: Dùng from + where and subquery 
+-- 1. Hãy hiển thị thông tin các sản phẩm nằm trông 3 mức giá cao nhất
+select * 
+from SanPham 
+where donGiaBan in(
+    select distinct top 3 donGiaBan 
+    from SanPham
+    order by donGiaBan desc
+);
+go
+
+-- 2. Hãy hiện thị thông tin sản phẩm có số lần nhập hàng về nhiều nhất
+insert into ChiTietPhieuNhap
+    (mapN, maSP, soLuongNhap, giaNhap)
+values
+    ('5210010', '2150003', 100, 400000)
+go
+
+select top 1 with ties count(ct.maSP) as soLanNhap, tenSP, donGiaBan, soLuongHienCon, soLuongCanDuoi 
+from SanPham sp, ChiTietDonHang ct
+where sp.maSP = ct.maSP
+group by ct.maSP, tenSP, donGiaBan, soLuongHienCon, soLuongCanDuoi 
+order by count(ct.maSP) desc;
+go
+
+-- 3. Thống kê sản phẩm ở top3 bán chạy nhất (có thể đảm bảo nhiều dòng miễn là đảm bảo nằm trong top3)
+select top 3 with ties sum(ct.soLuongDat) as tongSoLuongDat, ct.maSP, tenSP
+from SanPham sp, ChiTietDonHang ct
+where sp.maSP = ct.maSP
+group by ct.maSP, tenSP
+order by tongSoLuongDat desc;
+go
+-- subquery 
+select *
+from SanPham sp 
+where maSP in(
+    select top 3 with ties ct.maSP
+    from ChiTietDonHang ct
+    group by ct.maSP
+    order by sum(ct.soLuongDat) desc
+);
+
+-- 4. Thống kê những sản phẩm chưa được bán cái nào not in 
+select * 
+from SanPham 
+where maSP not in(
+    select maSP
+    from ChiTietDonHang 
+    where maSP is not null
+);
+go
+
+-- 5. Hiển thị những đơn hàng giao thành công và thông tin cụ thể của người giao hàng (position)
+-- Những đơn hàng giao thành công
+select ddh.maDH, trangThaiDonHang, nv.maNV, tenNV, gioiTinh, DoB, Salary 
+from DonDatHang_HoaDon ddh,  NhanVien nv
+where nv.maNV = ddh.maNV
+and trangThaiDonHang in (N'Đã giao');
+go
+
+-- 6. Hiển thị những đơn hàng của khách hàng ở Đà Nẵng hoặc ở Quảng Nam (nên có điều 
+-- kiện DN và QN, mặc định là DN hoặc QN)
+select maDH, kh.maKH, tenKH, diachiKH
+from DonDatHang_HoaDon ddh, KhachHang kh 
+where kh.maKH = ddh.maKH
+and diaChiKH in (N'Đà Nẵng', N'Quảng Nam', 'DN', 'QN');
+go
+
+-- 7. Hiển thị những sản phẩm có giá từ 500k - 2.000k 
+insert into SanPham 
+    (maSP, tenSP, donGiaBan, soLuongHienCon, soLuongCanDuoi)
+values
+    ('2150011', N'Rượu vang nhập khẩu', 1800000, 10, 5),
+    ('2150012', N'Nấm Linh Chi', 600000, 20, 10),
+    ('2150013', N'Đông Trùng Hạ Thảo', 1000000, 10, 5);
+go
+select maSP, tenSP, format(donGiaBan / 1000, '##,#k', 'es-ES') as donGia, soLuongHienCon, soLuongCanDuoi
+from SanPham 
+where donGiaBan between 500000 and 2000000;
+go
+
+-- 8. Những tháng có doanh thu trên 2000000 (có tham số là định mức tiền)
+-- Khai báo biến định mức tiền
+insert into DonDatHang_HoaDon
+    (maDH, ngayTaoDH, diaChiGiaoHang, SDTGiaoHang, maHoaDonDienTu, ngayThanhToan, ngayGiaoHang, trangThaiDonHang, maKH, maNV, DelStatus, tongTienDonHang, phuongXaGiaoHang)
+values
+    ('NVL011', '16/09/2026', N'1629 Nguyễn Tất Thành, Thanh Khê, TP Đà Nẵng', '0964106319', 'HD001', '27/09/2026', '05/10/2026', N'Đã giao', 'KH0003', 'NV001', N'Bình thường', 2900000, N'Thanh Khê');
+go
+declare @dinhMucTien money = 2000000;
+-- 9. Hãy tính tổng tiền của từng tháng 
+select sum(tongTienDonHang) as doanhThuHangThang, month(ngayThanhToan) as thang, year(ngayThanhToan) nam
+from DonDatHang_HoaDon
+group by month(ngayThanhToan), year(ngayThanhToan)
+having sum(tongTienDonHang) > @dinhMucTien;
+go
+
+-- 10. Thống kê số lượng khách theo từng tỉnh / thành phố (sắp xếp giảm dần)
+select * from KhachHang
+select count(maKH) as soLuongKhachTungTinh, diaChiKH
+from KhachHang
+group by diaChiKH
+order by soLuongKhachTungTinh desc;
+go
+
+-- 11. Thống kê giá trung bình, giá max, giá min nhập hàng cho mỗi sản phẩm
+-- Thêm dữ liệu vào bảng ChiTietPhieuNhap
+insert into ChiTietPhieuNhap (mapN, maSP, soLuongNhap, giaNhap)
+values
+    ('5210003', '2150001', 200, 900000),
+    ('5210004', '2150001', 150, 1100000);
+go
+select sp.maSP, tenSP, avg(giaNhap) as giaTrungBinh, max(giaNhap) as giaMax, min(giaNhap) as giaMin
+from SanPham sp, ChiTietPhieuNhap ct
+where sp.maSP = ct.maSP
+group by sp.maSP, tenSP;
+go 
+
+-- 12. hiển thị giá trung bình, giá max, giá min bán ra cho mỗi sản phẩm 
+-- (lưu ý, mỗi mức giá bán ra của sản phẩm chỉ tính 1 lần)  
+update ChiTietDonHang
+set donGia = 140000
+where maDH = 'NVL002' and maSP = '2150001';
+update ChiTietDonHang
+set donGia = 150000
+where maDH = 'NVL003' and maSP = '2150001';
+select sp.maSP, tenSP, avg(distinct ct.donGia) as giaTrungBinh, max(ct.donGia) as giaMax, min(ct.donGia) as giaMin
+from SanPham sp, ChiTietDonHang ct
+where sp.maSP = ct.maSP
+group by sp.maSP, sp.tenSP
+go
+
+-- 13. Thống kê số lần khách hàng mua hàng của từng khách hàng (sắp xếp giảm dần)
+select kh.maKH, tenKH, count(ddh.maKH) as soLanMuaHang
+from KhachHang kh
+left join DonDatHang_HoaDon ddh on kh.maKH = ddh.maKH
+group by kh.maKH, tenKH
+order by count(ddh.maKH) desc;
+go
+
+-- 14. Hiển thị thông tin chi tiết của các sản phẩm mà có số lần nhập hàng nhiều nhất 
+-- (luu ý trường hợp những sản phẩm cùng giá trị)
+-- Chèn thêm 1 lần nhập nữa cho Gạo để nâng soLanNhap của Gạo lên 2 lần
+insert into ChiTietPhieuNhap (mapN, maSP, soLuongNhap, giaNhap)
+values ('5210002', '2150001', 300, 100000);
+select top 1 with ties 
+    sp.*, 
+    count(ct.maSP) as soLanNhap
+from SanPham sp, ChiTietPhieuNhap ct
+where sp.maSP = ct.maSP
+group by sp.maSP, tenSP, donGiaBan, soLuongHienCon, soLuongCanDuoi
+order by count(ct.maSP) desc;
+go
+
+-- 15. hiển thị thông tin chi tiết của các nhà cung cấp mà có số lần nhập hàng lớn hơn 3 
+insert into PhieuNhap 
+    (mapN, ngayNhapHang, maNCC)
+values 
+    ('5210015', '20261031', 'NCC001'),
+    ('5210016', '20261031', 'NCC001'),
+    ('5210017', '20261031', 'NCC001');
+go
+select count(ncc.maNCC) as soLanNhapHang, ncc.*
+from NhaCungCap ncc, PhieuNhap pn
+where ncc.maNCC = pn.maNCC
+group by ncc.maNCC, tenNCC, diaChiNCC, SDT, nhanVienLienHe
+having count(ncc.maNCC) > 3;
+go
+
+-- 16. Hiển thị những đơn hàng không cần được xuất hóa đơn (nghĩa là cột hóa đơn điện tử (kh có gtri)
+insert into DonDatHang_HoaDon
+    (maDH, ngayTaoDH, diaChiGiaoHang, SDTGiaoHang, maHoaDonDienTu, trangThaiDonHang, maKH)
+values 
+    ('NVL012', '20261101', N'Đà Nẵng', '0905123456', NULL, N'Đã giao', 'KH0001');
+go
+select *
+from DonDatHang_HoaDon
+where maHoaDonDienTu is null;
+go
+-- C2: Sử dụng join / union / except
+-- 1. Hãy hiển thị thông tin các sản phẩm có giá bán ra nằm trong 3 mức giá cao nhất?
+select distinct s.maSP, tenSP, c.donGia, soLuongHienCon, soLuongCanDuoi
+from SanPham s
+inner join ChiTietDonHang c on c.maSP = s.maSP
+where c.donGia in (
+    select distinct top 3 donGia 
+    from ChiTietDonHang 
+    order by donGia desc
+)
+order by c.donGia desc;
+go
+
+-- 2. Hãy hiển thị thông tin sản phẩm có số lần nhập hàng về nhiều nhất 
+select top 1 with ties 
+    s.maSP,
+    tenSP,
+    soLuongHienCon, 
+    soLuongCanDuoi, 
+    donGiaBan, 
+    count(c.maSP) as soLanNhap
+from SanPham s
+inner join ChiTietPhieuNhap c on s.maSP = c.maSP 
+group by s.maSP, tenSP, soLuongHienCon, soLuongCanDuoi, donGiaBan
+order by count(c.maSP) desc;
+go
+
+-- 3. thống kê những sản phẩm thuộc top 3 bán chạy nhất  
+select s.maSP, tenSP, count(c.maSP) as soLanBan
+from SanPham s 
+inner join ChiTietDonHang c on c.maSP = s.maSP 
+group by s.maSP, tenSP
+having count(c.maSP) in (
+    select distinct top 3 count(maSP)
+    from ChiTietDonHang
+    group by maSP
+    order by count(maSP) desc
+)
+order by count(c.maSP) desc;
+go
+
+-- 4. thống kê những sản phẩm chưa bán được cái nào  
+select s.maSP, tenSP 
+from SanPham s
+left join ChiTietDonHang c on c.maSP = s.maSP
+where c.maSP is null;
+go
+
+-- 5. Hiển thị những đơn hàng giao thành công và thông tin cụ thể của người giao hàng (position) 
+select * from DonDatHang_HoaDon;
+select * from NhanVien;
+select d.maDH, d.trangThaiDonHang, n.maNV, n.tenNV, n.SDT, n.Email, n.gioiTinh, n.DoB, n.Salary, c.maCV, tenCV
+from DonDatHang_HoaDon d
+inner join NhanVien n on n.maNV = d.maNV 
+inner join NhanVien_ChucVu nc on nc.maNV = n.maNV
+inner join ChucVu c on c.maCV = nc.maCV
+where d.trangThaiDonHang = N'Đã giao';
+go
+
+-- 6. hiển thị những đơn hàng của khách hàng ở Đà Nẵng hoặc Quảng Nam (nên có điều kiện DN và QN, mặc định là DN hoặc QN) 
+select d.maDH, k.maKH, k.tenKH, k.diaChiKH 
+from DonDatHang_HoaDon d
+inner join KhachHang k on d.maKH = k.maKH 
+where k.diaChiKH in (N'Quảng Nam', N'Đà Nẵng')
+go
+
+-- 7. hiển thị những sản phẩm có giá từ 500k – 2.000k 
+select maSP, tenSP, format(donGiaBan / 1000, '##,#k', 'es-ES') as donGia, soLuongHienCon, soLuongCanDuoi
+from SanPham 
+where donGiaBan between 500000 and 2000000;
+go
+
+-- 8. những tháng có doanh thu trên 2000000 (có tham số là định mức tiền)
+declare @dinhMucTien money = 2000000;
+select sum(tongTienDonHang) as doanhThu , year(ngayThanhToan) as nam, month(ngayThanhToan) as thang
+from DonDatHang_HoaDon
+where ngayThanhToan is not null -- Có những đơn hàng chưa thanh toán (đang ở trạng thái chờ duyệt)
+group by year(ngayThanhToan), month(ngayThanhToan) 
+having sum(tongTienDonHang) > @dinhMucTien
+order by sum(tongTienDonHang)
+go
+
+-- 9. thống kê số lượng khách theo từng tỉnh/thành phố (sắp xếp giảm dần) 
+select diaChiKH, count(maKH) as soLuongKhach
+from KhachHang
+group by diaChiKH
+order by soLuongKhach desc;
+go
+
+-- 10. thống kê giá trung bình, giá max, giá min nhập hàng cho mỗi sản phẩm  
+select s.maSP, s.tenSP, avg(giaNhap) as giaTrungBinh, max(giaNhap) as giaMax, min(giaNhap) as giaMin 
+from SanPham s
+inner join ChiTietPhieuNhap c on c.maSP = s.maSP
+group by s.maSP, s.tenSP;
+go
+
+-- 11. hiển thị giá trung bình, giá max, giá min bán ra cho mỗi sản phẩm (lưu ý, mỗi mức giá bán ra của sản phẩm chỉ tính 1 lần)  
+select * from ChiTietDonHang
+select s.maSP, s.tenSP, avg(distinct donGia) as giaTrungBinh, max(donGia) as giaMax, min(donGia) as giaMin 
+from ChiTietDonHang c
+inner join SanPham s on s.maSP = c.maSP 
+group by s.maSP, s.tenSP;
+go
+
+-- 12. thống kê số lần khách hàng mua hàng của từng khách hàng (sắp xếp giảm dần) 
+select k.maKH, k.tenKH, count(d.maDH) as soLanMuaHang 
+from DonDatHang_HoaDon d
+right join KhachHang k on k.maKH = d.maKH
+group by k.maKH, k.tenKH 
+order by soLanMuaHang desc;
+go
+
+-- 13. hiển thị thông tin chi tiết của các sản phẩm mà có số lần nhập hàng nhiều nhất  
+select top 1 with ties count(maPN) as soLanNhapHang, s.maSP, tenSP, soLuongCanDuoi, soLuongHienCon, donGiaBan
+from ChiTietPhieuNhap c
+inner join SanPham s on s.maSP = c.maSP 
+group by s.maSP, tenSP, soLuongCanDuoi, soLuongHienCon, donGiaBan
+order by soLanNhapHang desc;
+go
+
+-- 14. hiển thị thông tin chi tiết của các nhà cung cấp mà có số lần nhập hàng lớn hơn 1 
+select n.maNCC, tenNCC, diaChiNCC, SDT, nhanVienLienHe, count(c.mapN) as soLanNhap
+from NhaCungCap n
+inner join PhieuNhap c on n.maNCC = c.maNCC
+group by n.maNCC, tenNCC, diaChiNCC, SDT, nhanVienLienHe
+having count(mapN) > 1;
+go
+  
+-- 15. Hiển thị những đơn hàng không cần được xuất hóa đơn (nghĩa là cột Hóa đơn điện tử không có giá trị) 
+select *
+from DonDatHang_HoaDon 
+where maHoaDonDienTu is null
+go
